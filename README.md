@@ -1,8 +1,8 @@
 # contracts
 
-**Version 1.1.0** · MIT License · by Ouyang Dazhi
+**Version 1.1.0** · MIT License · by DaZhi-the-Revelator
 
-A contract programming module for V. It provides **preconditions**, **postconditions**, **invariants**, and **assertions** — all routable through a replaceable violation handler, all disableable with a single flag, and all integrated with V's native `!T` error propagation.
+A contract programming module for V. It provides **preconditions**, **postconditions**, **invariants**, and **assertions** — all routable through a replaceable violation handler, all disable-able with a single flag, and all integrated with V's native `!T` error propagation.
 
 Contract programming is a way of making your code's expectations explicit and machine-checkable. Instead of silently doing the wrong thing when given bad input, a function states upfront what it requires and what it guarantees. When those rules are broken, you get an immediate, precise error message pointing to the exact cause — rather than a cryptic crash somewhere downstream.
 
