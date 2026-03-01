@@ -1,3 +1,45 @@
+// contracts provides Design by Contract primitives for V programs.
+//
+// The three core checks correspond to the three contract roles:
+//
+//   - `require`         — precondition: the *caller's* obligation before invoking a function.
+//   - `ensure`          — postcondition: the *function's* promise when it returns.
+//   - `invariant_check` — invariant: a data structure's internal consistency guarantee.
+//
+// All behaviour is controlled through a `Config` value that you create and own — there is
+// no global state. Pass one `&Config` per module (or per test) to every contract call.
+//
+// Additional helpers:
+//
+//   - `assert_that`       — general-purpose assertion routed through Config.handler.
+//   - `assert_eq`         — equality check with auto-formatted "expected X, got Y" message.
+//   - `assert_ne`         — inequality check with auto-formatted message.
+//   - `assert_lt`         — strictly-less-than check.
+//   - `assert_gt`         — strictly-greater-than check.
+//   - `assert_in_range`   — inclusive range check.
+//   - `assert_approx_eq`  — floating-point equality within a tolerance (use instead of assert_eq for f64).
+//   - `ensure_result`     — postcondition inlined on a return statement; passes value through unchanged.
+//   - `require_not_none`  — unwraps an optional, firing a precondition violation if it is `none`.
+//   - `checked`           — single-precondition shorthand for wrapping a closure.
+//   - `Invariant`         — multi-condition builder: accumulates all failures, reports all at once.
+//   - `ContractedFn`      — multi-condition pre/postcondition builder for closures.
+//   - `disabled`          — returns a Config with all checks turned off; use for production builds.
+//
+// Quick start:
+//
+//   import dazhi_the_revelator.contracts
+//
+//   const cfg = contracts.Config{}
+//
+//   fn divide(a f64, b f64) f64 {
+//       contracts.require(&cfg, b != 0.0, 'divisor must not be zero', @FILE, @LINE)
+//       result := a / b
+//       contracts.ensure(&cfg, result == result, 'BUG: result must not be NaN', @FILE, @LINE)
+//       return result
+//   }
+//
+// To eliminate the `@FILE, @LINE` boilerplate, create a thin wrapper file in your
+// project that fixes `cfg` and calls through (see README.md §Reducing Boilerplate).
 module contracts
 
 // ViolationKind identifies which type of contract was violated.
@@ -30,10 +72,10 @@ pub type ViolationHandlerFn = fn (ViolationInfo)
 // substituting a custom handler.
 pub fn panic_handler(info ViolationInfo) {
 	kind_str := match info.kind {
-		.precondition   { 'Precondition (require) violated' }
-		.postcondition  { 'Postcondition (ensure) violated' }
+		.precondition { 'Precondition (require) violated' }
+		.postcondition { 'Postcondition (ensure) violated' }
 		.invariant_fail { 'Invariant violated' }
-		.assertion      { 'Assertion failed' }
+		.assertion { 'Assertion failed' }
 	}
 	panic('${kind_str} [${info.file}:${info.line}]: ${info.message}')
 }
@@ -45,7 +87,9 @@ pub fn panic_handler(info ViolationInfo) {
 // Example:
 //   const cfg = contracts.disabled()
 pub fn disabled() Config {
-	return Config{ enabled: false }
+	return Config{
+		enabled: false
+	}
 }
 
 // Config holds the runtime settings for a set of contract checks.
@@ -105,10 +149,10 @@ pub:
 // Implements the `IError` interface so `ViolationError` works with `or {}` and `!`.
 pub fn (e ViolationError) msg() string {
 	kind_str := match e.info.kind {
-		.precondition   { 'Precondition (require) violated' }
-		.postcondition  { 'Postcondition (ensure) violated' }
+		.precondition { 'Precondition (require) violated' }
+		.postcondition { 'Postcondition (ensure) violated' }
 		.invariant_fail { 'Invariant violated' }
-		.assertion      { 'Assertion failed' }
+		.assertion { 'Assertion failed' }
 	}
 	return '${kind_str} [${e.info.file}:${e.info.line}]: ${e.info.message}'
 }
@@ -128,10 +172,10 @@ pub fn (e ViolationError) code() int {
 //   }
 pub fn (info ViolationInfo) str() string {
 	kind_str := match info.kind {
-		.precondition   { 'Precondition (require) violated' }
-		.postcondition  { 'Postcondition (ensure) violated' }
+		.precondition { 'Precondition (require) violated' }
+		.postcondition { 'Postcondition (ensure) violated' }
 		.invariant_fail { 'Invariant violated' }
-		.assertion      { 'Assertion failed' }
+		.assertion { 'Assertion failed' }
 	}
 	return '${kind_str} [${info.file}:${info.line}]: ${info.message}'
 }
