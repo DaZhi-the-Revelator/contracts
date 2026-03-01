@@ -45,7 +45,7 @@ Contract programming is a way of making your code's expectations explicit and ma
 Copy the `contracts/` folder into your project or into `~/.vmodules/contracts/`, then import:
 
 ```v
-import contracts
+import dazhi_the_revelator.contracts
 ```
 
 ---
@@ -55,7 +55,7 @@ import contracts
 Every function takes a `&Config` as its first argument. Create one `Config` constant per file or module and pass it everywhere. No globals, no shared mutable state.
 
 ```v
-import contracts
+import dazhi_the_revelator.contracts
 
 // One constant per file — shared by all functions in this file.
 const cfg = contracts.Config{}
@@ -86,7 +86,7 @@ Every call ends with `, @FILE, @LINE`. That is intentional — it guarantees acc
 // file: myproject/c.v
 module main  // use your own module name
 
-import contracts
+import dazhi_the_revelator.contracts
 
 const contracts_cfg = contracts.Config{}
 
