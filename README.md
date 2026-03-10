@@ -1,6 +1,6 @@
 # contracts
 
-**Version 1.1.0** · MIT License · by DaZhi-the-Revelator
+**Version 1.2.0** · MIT License · by DaZhi-the-Revelator
 
 A contract programming module for V. It provides **preconditions**, **postconditions**, **invariants**, and **assertions** — all routable through a replaceable violation handler, all disable-able with a single flag, and all integrated with V's native `!T` error propagation.
 
@@ -12,6 +12,7 @@ Contract programming is a way of making your code's expectations explicit and ma
 
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Built-In Shorthand — No Config Required](#built-in-shorthand--no-config-required)
 - [Reducing Boilerplate — Project-Level Aliases](#reducing-boilerplate--project-level-aliases)
 - [API Reference](#api-reference)
   - [Config](#config)
@@ -75,6 +76,48 @@ fn main() {
 
 > **Why `@FILE` and `@LINE`?**
 > These are V compile-time identifiers evaluated at the exact line you write them. Every violation message therefore points to your call site, not somewhere inside the module. See [Reducing Boilerplate](#reducing-boilerplate--project-level-aliases) for how to avoid typing them repeatedly.
+
+---
+
+## Built-In Shorthand — No Config Required
+
+Starting with **1.2.0**, every core check is available as a two-argument (or three-argument) overload that needs no `Config` or `@FILE` / `@LINE` at the call site. These wrappers use a module-level default `Config` (enabled, `panic_handler`) and are resolved automatically by arity — V picks the right overload based on how many arguments you pass.
+
+```v
+import dazhi_the_revelator.contracts
+
+fn divide(a f64, b f64) f64 {
+    contracts.require(b != 0.0, 'divisor must not be zero')
+    result := a / b
+    contracts.ensure(result == result, 'result must not be NaN')
+    return result
+}
+
+fn validate_hour(h int) {
+    contracts.assert_in_range(h, 0, 23, 'hour')
+}
+
+fn approx_pi(result f64) {
+    contracts.assert_approx_eq(result, 3.14159, 0.0001, 'pi')
+}
+```
+
+Available shorthand forms (all use the module default Config):
+
+| Shorthand | Full form equivalent |
+|---|---|
+| `require(cond, msg)` | `require(&cfg, cond, msg, @FILE, @LINE)` |
+| `ensure(cond, msg)` | `ensure(&cfg, cond, msg, @FILE, @LINE)` |
+| `invariant_check(cond, msg)` | `invariant_check(&cfg, cond, msg, @FILE, @LINE)` |
+| `assert_that(cond, msg)` | `assert_that(&cfg, cond, msg, @FILE, @LINE)` |
+| `assert_eq(actual, expected, label)` | `assert_eq(&cfg, actual, expected, label, @FILE, @LINE)` |
+| `assert_ne(actual, unexpected, label)` | `assert_ne(&cfg, actual, unexpected, label, @FILE, @LINE)` |
+| `assert_lt(actual, limit, label)` | `assert_lt(&cfg, actual, limit, label, @FILE, @LINE)` |
+| `assert_gt(actual, floor, label)` | `assert_gt(&cfg, actual, floor, label, @FILE, @LINE)` |
+| `assert_in_range(actual, lo, hi, label)` | `assert_in_range(&cfg, actual, lo, hi, label, @FILE, @LINE)` |
+| `assert_approx_eq(actual, expected, tol, label)` | `assert_approx_eq(&cfg, actual, expected, tol, label, @FILE, @LINE)` |
+
+> **Trade-off:** Because `@FILE` and `@LINE` are captured inside `defaults.v` rather than at your call site, violation messages will show `defaults.v` as the source location instead of your own file and line. If precise location in violation messages matters (e.g. for production diagnostics), use the full five-argument form or the [project-level alias pattern](#reducing-boilerplate--project-level-aliases) below.
 
 ---
 
@@ -880,6 +923,10 @@ All tests are in `contracts_test.v`. Each test creates its own collecting `Confi
 ---
 
 ## Changelog
+
+### 1.2.0
+
+- **Built-in shorthand wrappers** (`defaults.v`) — every core check is now available as a shorter overload with no `Config` or `@FILE` / `@LINE` argument. Resolved by arity: `contracts.require(cond, msg)` uses the module default Config. Full five-argument forms remain unchanged.
 
 ### 1.1.0
 
