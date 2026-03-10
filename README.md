@@ -1,6 +1,6 @@
 # contracts
 
-**Version 1.2.1** · MIT License · by DaZhi-the-Revelator
+**Version 1.2.2** · MIT License · by DaZhi-the-Revelator
 
 A contract programming module for V. It provides **preconditions**, **postconditions**, **invariants**, and **assertions** — all routable through a replaceable violation handler, all disable-able with a single flag, and all integrated with V's native `!T` error propagation.
 
@@ -13,7 +13,6 @@ Contract programming is a way of making your code's expectations explicit and ma
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Built-In Shorthand — No Config Required](#built-in-shorthand--no-config-required)
-- [Reducing Boilerplate — Project-Level Aliases](#reducing-boilerplate--project-level-aliases)
 - [API Reference](#api-reference)
   - [Config](#config)
   - [disabled](#disabled)
@@ -75,7 +74,7 @@ fn main() {
 ```
 
 > **Why `@FILE` and `@LINE`?**
-> These are V compile-time identifiers evaluated at the exact line you write them. Every violation message therefore points to your call site, not somewhere inside the module. See [Reducing Boilerplate](#reducing-boilerplate--project-level-aliases) for how to avoid typing them repeatedly.
+> These are V compile-time identifiers evaluated at the exact line you write them. Every violation message therefore points to your call site, not somewhere inside the module. Use the built-in shorthand (or a module `as` alias) if you want to avoid typing them.
 
 ---
 
@@ -117,7 +116,7 @@ Available shorthand forms (all use the module default Config):
 | `assert_in_range(actual, lo, hi, label)` | `assert_in_range(&cfg, actual, lo, hi, label, @FILE, @LINE)` |
 | `assert_approx_eq(actual, expected, tol, label)` | `assert_approx_eq(&cfg, actual, expected, tol, label, @FILE, @LINE)` |
 
-> **Trade-off:** Because `@FILE` and `@LINE` are captured inside `defaults.v` rather than at your call site, violation messages will show `defaults.v` as the source location instead of your own file and line. If precise location in violation messages matters (e.g. for production diagnostics), use the full five-argument form or the [project-level alias pattern](#reducing-boilerplate--project-level-aliases) below.
+> **Trade-off:** Because `@FILE` and `@LINE` are captured inside `defaults.v` rather than at your call site, violation messages will show `defaults.v` as the source location instead of your own file and line. If precise location in violation messages matters (e.g. for production diagnostics), use the full five-argument form.
 
 ### Shorter prefix with `as`
 
@@ -146,59 +145,6 @@ fn divide(a f64, b f64) f64 {
     return a / b
 }
 ```
-
----
-
-## Reducing Boilerplate — Project-Level Aliases
-
-Every call ends with `, @FILE, @LINE`. That is intentional — it guarantees accurate violation locations — but it adds visual noise. The cleanest solution is a single wrapper file in your project that fixes the `cfg` and injects `@FILE`/`@LINE` automatically:
-
-```v
-// file: myproject/c.v
-module main  // use your own module name
-
-import dazhi_the_revelator.contracts
-
-const contracts_cfg = contracts.Config{}
-
-@[inline] fn require(cond bool, msg string) {
-    contracts.require(&contracts_cfg, cond, msg, @FILE, @LINE)
-}
-@[inline] fn ensure(cond bool, msg string) {
-    contracts.ensure(&contracts_cfg, cond, msg, @FILE, @LINE)
-}
-@[inline] fn invariant_check(cond bool, msg string) {
-    contracts.invariant_check(&contracts_cfg, cond, msg, @FILE, @LINE)
-}
-@[inline] fn assert_that(cond bool, msg string) {
-    contracts.assert_that(&contracts_cfg, cond, msg, @FILE, @LINE)
-}
-@[inline] fn assert_eq[T](actual T, expected T, label string) {
-    contracts.assert_eq(&contracts_cfg, actual, expected, label, @FILE, @LINE)
-}
-@[inline] fn assert_approx_eq(actual f64, expected f64, tolerance f64, label string) {
-    contracts.assert_approx_eq(&contracts_cfg, actual, expected, tolerance, label, @FILE, @LINE)
-}
-@[inline] fn assert_lt[T](actual T, limit T, label string) {
-    contracts.assert_lt(&contracts_cfg, actual, limit, label, @FILE, @LINE)
-}
-@[inline] fn assert_gt[T](actual T, floor T, label string) {
-    contracts.assert_gt(&contracts_cfg, actual, floor, label, @FILE, @LINE)
-}
-@[inline] fn assert_in_range[T](actual T, lo T, hi T, label string) {
-    contracts.assert_in_range(&contracts_cfg, actual, lo, hi, label, @FILE, @LINE)
-}
-```
-
-Your call sites then become clean and natural:
-
-```v
-require(b != 0.0, 'divisor must not be zero')
-assert_in_range(hour, 0, 23, 'hour')
-assert_approx_eq(result, 3.14159, 0.0001, 'pi')
-```
-
-Because `@FILE` and `@LINE` are evaluated in each wrapper at compile time, violation messages still point to your call sites — not the wrapper file.
 
 ---
 
@@ -920,7 +866,7 @@ fn bounded_divide(a f64, b f64, lo f64, hi f64) f64 {
 
 **No global state.** V discourages global variables, and this module has none. All settings live in the `Config` struct you create and own. This makes behaviour explicit, makes tests trivially isolated (each test creates its own `Config`), and makes the module safe to use in concurrent contexts.
 
-**`@FILE` and `@LINE` at every call site.** V's compile-time identifiers are evaluated where you write them, not inside the module. Passing them explicitly means every violation message tells you the exact file and line in *your* code where the broken contract was written. The [project-level alias pattern](#reducing-boilerplate--project-level-aliases) lets you eliminate the repetition while keeping this accuracy.
+**`@FILE` and `@LINE` at every call site.** V's compile-time identifiers are evaluated where you write them, not inside the module. Passing them explicitly means every violation message tells you the exact file and line in *your* code where the broken contract was written. The built-in shorthand eliminates the repetition at the cost of pointing to `defaults.v` instead of your call site; the full five-argument form preserves accuracy.
 
 **`require` vs `ensure` vs `assert_that`.** These are intentionally separate. `require` means the *caller* made a mistake. `ensure` means *this function* made a mistake. `assert_that` is for general logic checks that don't fit either category. Keeping them distinct makes bug attribution immediate.
 
@@ -951,6 +897,10 @@ All tests are in `contracts_test.v`. Each test creates its own collecting `Confi
 ---
 
 ## Changelog
+
+### 1.2.2
+
+- Removed the **Reducing Boilerplate — Project-Level Aliases** section. The built-in shorthand wrappers introduced in 1.2.0 cover the same use case, making the manual wrapper-file pattern redundant.
 
 ### 1.2.0
 
