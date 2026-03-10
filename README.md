@@ -1,6 +1,6 @@
 # contracts
 
-**Version 1.2.0** · MIT License · by DaZhi-the-Revelator
+**Version 1.2.1** · MIT License · by DaZhi-the-Revelator
 
 A contract programming module for V. It provides **preconditions**, **postconditions**, **invariants**, and **assertions** — all routable through a replaceable violation handler, all disable-able with a single flag, and all integrated with V's native `!T` error propagation.
 
@@ -118,6 +118,34 @@ Available shorthand forms (all use the module default Config):
 | `assert_approx_eq(actual, expected, tol, label)` | `assert_approx_eq(&cfg, actual, expected, tol, label, @FILE, @LINE)` |
 
 > **Trade-off:** Because `@FILE` and `@LINE` are captured inside `defaults.v` rather than at your call site, violation messages will show `defaults.v` as the source location instead of your own file and line. If precise location in violation messages matters (e.g. for production diagnostics), use the full five-argument form or the [project-level alias pattern](#reducing-boilerplate--project-level-aliases) below.
+
+### Shorter prefix with `as`
+
+If `contracts.` feels too long, you can alias the module at import time — this is standard V and requires no special support from the module:
+
+```v
+import dazhi_the_revelator.contracts as ct
+
+fn divide(a f64, b f64) f64 {
+    ct.require(b != 0.0, 'divisor must not be zero')
+    result := a / b
+    ct.ensure(result == result, 'result must not be NaN')
+    return result
+}
+```
+
+The full five-argument form works with an alias too:
+
+```v
+import dazhi_the_revelator.contracts as ct
+
+const cfg = ct.Config{}
+
+fn divide(a f64, b f64) f64 {
+    ct.require(&cfg, b != 0.0, 'divisor must not be zero', @FILE, @LINE)
+    return a / b
+}
+```
 
 ---
 
