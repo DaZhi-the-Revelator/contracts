@@ -4,15 +4,49 @@
 
 A contract programming module for V. Provides **preconditions**, **postconditions**, **invariants**, and **assertions** — all routed through a configurable handler, fully disable-able, and compatible with V’s `!T` error model.
 
+Contracts are **runtime guarantees** that define what your code *requires*, *ensures*, and *maintains*.
+
+------
+
+## Table of Contents
+
+- [At a Glance](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#at-a-glance)
+- [Philosophy](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#philosophy)
+- [Installation](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#installation)
+- [Quick Start](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#quick-start)
+- [Shorthand](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#shorthand)
+- [When to Use What](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#when-to-use-what)
+- [API](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#api)
+- [Real-World Examples](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#real-world-examples)
+- [Anti-Patterns](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#anti-patterns)
+- [Production Usage](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#production-usage)
+- [Testing](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#testing)
+- [Common Pitfalls](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#common-pitfalls)
+- [Run Tests](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#run-tests)
+- [Changelog](https://chatgpt.com/c/69bab78e-21fc-8329-8325-532ffc2ac608#changelog)
+
 ------
 
 ## At a Glance
 
 - No global state — everything flows through `Config`
-- Replaceable violation handler (panic, log, collect)
+- Contracts are runtime correctness guarantees
+- Replaceable handler (panic, log, collect, recover)
 - Works with `!T` via `ViolationError`
-- Precise diagnostics with `@FILE` / `@LINE`
-- Effectively zero overhead when disabled
+- Precise diagnostics via `@FILE` / `@LINE`
+- Zero overhead when disabled (explicitly)
+
+------
+
+## Philosophy
+
+Contracts are executable boundaries:
+
+- `require` → must be true before execution
+- `ensure` → must be true after execution
+- `invariant_check` → must always hold
+
+They define valid program states—not optional checks.
 
 ------
 
@@ -28,11 +62,15 @@ import dazhi_the_revelator.contracts
 ## Quick Start
 
 ```v
+import dazhi_the_revelator.contracts
+
 const cfg = contracts.Config{}
 
 fn divide(a f64, b f64) f64 {
     contracts.require(&cfg, b != 0.0, 'divisor must not be zero', @FILE, @LINE)
+
     result := a / b
+
     contracts.ensure(&cfg, result == result, 'result must not be NaN', @FILE, @LINE)
     return result
 }
@@ -47,287 +85,341 @@ contracts.require(b != 0.0, 'divisor must not be zero')
 contracts.ensure(result == result, 'result must not be NaN')
 ```
 
-> ⚠️ Shorthand loses call-site file/line. Use full form for accurate diagnostics.
+> ⚠️ Shorthand captures file/line inside the module, not your call site.
 
 ------
 
-# API
+## When to Use What
+
+| Situation                        | Use                |
+| -------------------------------- | ------------------ |
+| Caller gave invalid input        | `require`          |
+| Function produced invalid output | `ensure`           |
+| Internal state must remain valid | `invariant_check`  |
+| General sanity check             | `assert_that`      |
+| Validate return inline           | `ensure_result`    |
+| Optional must exist              | `require_not_none` |
+| One guarded execution            | `checked`          |
 
 ------
 
-## `require` — Precondition
+## API
 
-### Full form
-
-```v
-contracts.require(&cfg, b != 0.0, 'divisor must not be zero', @FILE, @LINE)
-```
-
-### Shorthand
+### Config
 
 ```v
-contracts.require(b != 0.0, 'divisor must not be zero')
-```
-
-------
-
-## `ensure` — Postcondition
-
-### Full form
-
-```v
-contracts.ensure(&cfg, result >= 0, 'result must be non-negative', @FILE, @LINE)
-```
-
-### Shorthand
-
-```v
-contracts.ensure(result >= 0, 'result must be non-negative')
+pub struct Config {
+    enabled bool               = true
+    handler ViolationHandlerFn = panic_handler
+}
 ```
 
 ------
 
-## `ensure_result` — Return validation
+### require
 
-### Full form
+#### Full form
 
 ```v
-return contracts.ensure_result(&cfg, value, value > 0, 'must be positive', @FILE, @LINE)
+contracts.require(&cfg, cond, msg, @FILE, @LINE)
 ```
 
-### Shorthand (inside body)
+#### Shorthand
+
+```v
+contracts.require(cond, msg)
+```
+
+------
+
+### ensure
+
+#### Full form
+
+```v
+contracts.ensure(&cfg, cond, msg, @FILE, @LINE)
+```
+
+#### Shorthand
+
+```v
+contracts.ensure(cond, msg)
+```
+
+------
+
+### ensure_result
+
+#### Full form
+
+```v
+return contracts.ensure_result(&cfg, value, cond, msg, @FILE, @LINE)
+```
+
+#### Short form
 
 ```v
 result := compute()
-contracts.ensure(result > 0, 'must be positive')
+contracts.ensure(cond, msg)
 return result
 ```
 
 ------
 
-## `invariant_check` — Internal consistency
+### invariant_check
 
-### Full form
+#### Full form
 
 ```v
-contracts.invariant_check(&cfg, s.len >= 0, 'length must be valid', @FILE, @LINE)
+contracts.invariant_check(&cfg, cond, msg, @FILE, @LINE)
 ```
 
-### Shorthand
+#### Shorthand
 
 ```v
-contracts.invariant_check(s.len >= 0, 'length must be valid')
-```
-
-------
-
-## `assert_that` — General assertion
-
-### Full form
-
-```v
-contracts.assert_that(&cfg, items.len > 0, 'must not be empty', @FILE, @LINE)
-```
-
-### Shorthand
-
-```v
-contracts.assert_that(items.len > 0, 'must not be empty')
+contracts.invariant_check(cond, msg)
 ```
 
 ------
 
-## `assert_eq`
+### assert_that
 
-### Full form
+#### Full form
 
 ```v
-contracts.assert_eq(&cfg, result, expected, 'result check', @FILE, @LINE)
+contracts.assert_that(&cfg, cond, msg, @FILE, @LINE)
 ```
 
-### Shorthand
+#### Shorthand
 
 ```v
-contracts.assert_eq(result, expected, 'result check')
-```
-
-------
-
-## `assert_ne`
-
-### Full form
-
-```v
-contracts.assert_ne(&cfg, idx, -1, 'index must exist', @FILE, @LINE)
-```
-
-### Shorthand
-
-```v
-contracts.assert_ne(idx, -1, 'index must exist')
+contracts.assert_that(cond, msg)
 ```
 
 ------
 
-## `assert_lt`
+### assert_eq
 
-### Full form
+#### Full form
 
 ```v
-contracts.assert_lt(&cfg, index, items.len, 'index', @FILE, @LINE)
+contracts.assert_eq(&cfg, actual, expected, label, @FILE, @LINE)
 ```
 
-### Shorthand
+#### Shorthand
 
 ```v
-contracts.assert_lt(index, items.len, 'index')
-```
-
-------
-
-## `assert_gt`
-
-### Full form
-
-```v
-contracts.assert_gt(&cfg, items.len, 0, 'items.len', @FILE, @LINE)
-```
-
-### Shorthand
-
-```v
-contracts.assert_gt(items.len, 0, 'items.len')
+contracts.assert_eq(actual, expected, label)
 ```
 
 ------
 
-## `assert_in_range`
+### assert_ne
 
-### Full form
+#### Full form
 
 ```v
-contracts.assert_in_range(&cfg, pct, 0, 100, 'percent', @FILE, @LINE)
+contracts.assert_ne(&cfg, actual, unexpected, label, @FILE, @LINE)
 ```
 
-### Shorthand
+#### Shorthand
 
 ```v
-contracts.assert_in_range(pct, 0, 100, 'percent')
-```
-
-------
-
-## `assert_approx_eq`
-
-### Full form
-
-```v
-contracts.assert_approx_eq(&cfg, result, 3.14, 0.01, 'pi', @FILE, @LINE)
-```
-
-### Shorthand
-
-```v
-contracts.assert_approx_eq(result, 3.14, 0.01, 'pi')
+contracts.assert_ne(actual, unexpected, label)
 ```
 
 ------
 
-## `require_not_none`
+### assert_lt
 
-### Full form
+#### Full form
 
 ```v
-val := contracts.require_not_none(&cfg, maybe, 'must exist', @FILE, @LINE)
+contracts.assert_lt(&cfg, actual, limit, label, @FILE, @LINE)
 ```
 
-### Shorthand
+#### Shorthand
 
 ```v
-val := contracts.require_not_none(maybe, 'must exist')
-```
-
-> ⚠️ If handler does not panic, returns zero value of `T`.
-
-------
-
-## `checked`
-
-### Full form
-
-```v
-return contracts.checked(&cfg, x >= 0, 'must be non-negative',
-    fn () f64 { return math.sqrt(x) }, @FILE, @LINE)
-```
-
-### Shorthand pattern
-
-```v
-contracts.require(x >= 0, 'must be non-negative')
-return math.sqrt(x)
+contracts.assert_lt(actual, limit, label)
 ```
 
 ------
 
-## `Invariant`
+### assert_gt
 
-### Full form
+#### Full form
+
+```v
+contracts.assert_gt(&cfg, actual, floor, label, @FILE, @LINE)
+```
+
+#### Shorthand
+
+```v
+contracts.assert_gt(actual, floor, label)
+```
+
+------
+
+### assert_in_range
+
+#### Full form
+
+```v
+contracts.assert_in_range(&cfg, actual, lo, hi, label, @FILE, @LINE)
+```
+
+#### Shorthand
+
+```v
+contracts.assert_in_range(actual, lo, hi, label)
+```
+
+------
+
+### assert_approx_eq
+
+#### Full form
+
+```v
+contracts.assert_approx_eq(&cfg, actual, expected, tol, label, @FILE, @LINE)
+```
+
+#### Shorthand
+
+```v
+contracts.assert_approx_eq(actual, expected, tol, label)
+```
+
+------
+
+### require_not_none
+
+#### Full form
+
+```v
+val := contracts.require_not_none(&cfg, maybe, msg, @FILE, @LINE)
+```
+
+#### Shorthand
+
+```v
+val := contracts.require_not_none(maybe, msg)
+```
+
+> ⚠️ Returns zero value if handler does not panic.
+
+------
+
+### checked
+
+#### Full form
+
+```v
+return contracts.checked(&cfg, cond, msg, fn () T { ... }, @FILE, @LINE)
+```
+
+#### Short form
+
+```v
+contracts.require(cond, msg)
+return body()
+```
+
+------
+
+### Invariant
+
+#### Full form
 
 ```v
 mut inv := contracts.Invariant{ cfg: &cfg }
-inv.check(x > 0, 'x must be positive')
-inv.check(y > 0, 'y must be positive')
+inv.check(cond, 'msg')
 inv.validate(@FILE, @LINE)
 ```
 
-### Shorthand-style usage
+#### Short form
 
 ```v
-contracts.invariant_check(x > 0, 'x must be positive')
-contracts.invariant_check(y > 0, 'y must be positive')
+contracts.invariant_check(cond, 'msg')
 ```
 
 ------
 
-## `ContractedFn`
+### ContractedFn
 
-### Full form
+#### Full form
 
 ```v
 mut cf := contracts.ContractedFn[int]{ cfg: &cfg }
-cf.pre(x > 0, 'x must be positive')
-return cf.call(fn () int { return x * 2 }, @FILE, @LINE)
+cf.pre(cond, 'msg')
+return cf.call(fn () int { ... }, @FILE, @LINE)
 ```
 
-### Simpler alternative
+#### Simpler
 
 ```v
-contracts.require(x > 0, 'x must be positive')
-return x * 2
+contracts.require(cond, msg)
+return body()
 ```
 
-> ⚠️ `post()` cannot depend on return value (evaluated early)
+> ⚠️ `post()` runs before execution.
 
 ------
 
-## `ViolationError`
+### ViolationError
 
 ```v
 return contracts.ViolationError{ info: ... }
 ```
 
-Used for `!T` error flows instead of panicking.
+------
+
+## Real-World Examples
+
+### API boundaries
+
+```v
+ct.require(req.email.contains('@'), 'invalid email')
+```
+
+### Invariants
+
+```v
+ct.invariant_check(acc.balance >= 0, 'balance must be non-negative')
+```
+
+### Data integrity
+
+```v
+ct.ensure(out.len == input.len, 'length must match')
+```
 
 ------
 
-## Production
+## Anti-Patterns
+
+- Disabling contracts by default
+- Using shorthand everywhere
+- Using float equality with `assert_eq`
+- Using contracts for control flow
+- Misusing `ContractedFn.post()`
+
+------
+
+## Production Usage
+
+Contracts are designed to run in production.
 
 ```v
-const cfg = $if prod {
-    contracts.disabled()
-} else {
-    contracts.Config{}
-}
+const cfg = contracts.Config{}
+```
+
+Disable only deliberately:
+
+```v
+const cfg = contracts.disabled()
 ```
 
 ------
@@ -348,11 +440,10 @@ const cfg = contracts.Config{
 
 ## Common Pitfalls
 
-- Shorthand hides real file/line
-- `assert_eq` with floats → use `assert_approx_eq`
-- `require_not_none` can silently return zero value
-- `ContractedFn.post()` evaluated too early
-- Forgetting `@FILE`, `@LINE`
+- Missing `@FILE`, `@LINE`
+- Overusing shorthand
+- Float comparisons
+- Silent zero values
 
 ------
 
@@ -361,3 +452,23 @@ const cfg = contracts.Config{
 ```sh
 v test .
 ```
+
+------
+
+## Changelog
+
+### 1.2.2
+
+- Cleanup
+
+### 1.2.0
+
+- Shorthand
+
+### 1.1.0
+
+- `disabled()`
+
+### 1.0.0
+
+- Initial release
