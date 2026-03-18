@@ -2,928 +2,362 @@
 
 **Version 1.2.2** · MIT License · by DaZhi-the-Revelator
 
-A contract programming module for V. It provides **preconditions**, **postconditions**, **invariants**, and **assertions** — all routable through a replaceable violation handler, all disable-able with a single flag, and all integrated with V's native `!T` error propagation.
+A contract programming module for V. Provides **preconditions**, **postconditions**, **invariants**, and **assertions** — all routed through a configurable handler, fully disable-able, and compatible with V’s `!T` error model.
 
-Contract programming is a way of making your code's expectations explicit and machine-checkable. Instead of silently doing the wrong thing when given bad input, a function states upfront what it requires and what it guarantees. When those rules are broken, you get an immediate, precise error message pointing to the exact cause — rather than a cryptic crash somewhere downstream.
+------
 
----
+## At a Glance
 
-## Table of Contents
+- No global state — everything flows through `Config`
+- Replaceable violation handler (panic, log, collect)
+- Works with `!T` via `ViolationError`
+- Precise diagnostics with `@FILE` / `@LINE`
+- Effectively zero overhead when disabled
 
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Built-In Shorthand — No Config Required](#built-in-shorthand--no-config-required)
-- [API Reference](#api-reference)
-  - [Config](#config)
-  - [disabled](#disabled)
-  - [panic_handler](#panic_handler)
-  - [ViolationInfo.str](#violationinfostr)
-  - [ViolationError](#violationerror)
-  - [require](#require)
-  - [ensure](#ensure)
-  - [ensure_result](#ensure_result)
-  - [invariant_check](#invariant_check)
-  - [assert_that](#assert_that)
-  - [assert_eq](#assert_eq)
-  - [assert_ne](#assert_ne)
-  - [assert_lt](#assert_lt)
-  - [assert_gt](#assert_gt)
-  - [assert_in_range](#assert_in_range)
-  - [assert_approx_eq](#assert_approx_eq)
-  - [require_not_none](#require_not_none)
-  - [checked](#checked)
-  - [Invariant](#invariant)
-  - [ContractedFn](#contractedfn)
-- [Design Notes](#design-notes)
-- [Running the Tests](#running-the-tests)
-- [Changelog](#changelog)
-
----
+------
 
 ## Installation
 
-Copy the `contracts/` folder into your project or into `~/.vmodules/contracts/`, then import:
-
-```v
+```sh
+v install dazhi_the_revelator.contracts
 import dazhi_the_revelator.contracts
 ```
 
----
+------
 
 ## Quick Start
 
-Every function takes a `&Config` as its first argument. Create one `Config` constant per file or module and pass it everywhere. No globals, no shared mutable state.
-
 ```v
-import dazhi_the_revelator.contracts
-
-// One constant per file — shared by all functions in this file.
 const cfg = contracts.Config{}
 
 fn divide(a f64, b f64) f64 {
     contracts.require(&cfg, b != 0.0, 'divisor must not be zero', @FILE, @LINE)
     result := a / b
-    contracts.ensure(&cfg, result != math.inf(1), 'result must be finite', @FILE, @LINE)
-    return result
-}
-
-fn main() {
-    println(divide(10.0, 2.0))  // 5.0
-    divide(10.0, 0.0)           // panic: Precondition (require) violated [main.v:5]: divisor must not be zero
-}
-```
-
-> **Why `@FILE` and `@LINE`?**
-> These are V compile-time identifiers evaluated at the exact line you write them. Every violation message therefore points to your call site, not somewhere inside the module. Use the built-in shorthand (or a module `as` alias) if you want to avoid typing them.
-
----
-
-## Built-In Shorthand — No Config Required
-
-Starting with **1.2.0**, every core check is available as a two-argument (or three-argument) overload that needs no `Config` or `@FILE` / `@LINE` at the call site. These wrappers use a module-level default `Config` (enabled, `panic_handler`) and are resolved automatically by arity — V picks the right overload based on how many arguments you pass.
-
-```v
-import dazhi_the_revelator.contracts
-
-fn divide(a f64, b f64) f64 {
-    contracts.require(b != 0.0, 'divisor must not be zero')
-    result := a / b
-    contracts.ensure(result == result, 'result must not be NaN')
-    return result
-}
-
-fn validate_hour(h int) {
-    contracts.assert_in_range(h, 0, 23, 'hour')
-}
-
-fn approx_pi(result f64) {
-    contracts.assert_approx_eq(result, 3.14159, 0.0001, 'pi')
-}
-```
-
-Available shorthand forms (all use the module default Config):
-
-| Shorthand | Full form equivalent |
-|---|---|
-| `require(cond, msg)` | `require(&cfg, cond, msg, @FILE, @LINE)` |
-| `ensure(cond, msg)` | `ensure(&cfg, cond, msg, @FILE, @LINE)` |
-| `invariant_check(cond, msg)` | `invariant_check(&cfg, cond, msg, @FILE, @LINE)` |
-| `assert_that(cond, msg)` | `assert_that(&cfg, cond, msg, @FILE, @LINE)` |
-| `assert_eq(actual, expected, label)` | `assert_eq(&cfg, actual, expected, label, @FILE, @LINE)` |
-| `assert_ne(actual, unexpected, label)` | `assert_ne(&cfg, actual, unexpected, label, @FILE, @LINE)` |
-| `assert_lt(actual, limit, label)` | `assert_lt(&cfg, actual, limit, label, @FILE, @LINE)` |
-| `assert_gt(actual, floor, label)` | `assert_gt(&cfg, actual, floor, label, @FILE, @LINE)` |
-| `assert_in_range(actual, lo, hi, label)` | `assert_in_range(&cfg, actual, lo, hi, label, @FILE, @LINE)` |
-| `assert_approx_eq(actual, expected, tol, label)` | `assert_approx_eq(&cfg, actual, expected, tol, label, @FILE, @LINE)` |
-
-> **Trade-off:** Because `@FILE` and `@LINE` are captured inside `defaults.v` rather than at your call site, violation messages will show `defaults.v` as the source location instead of your own file and line. If precise location in violation messages matters (e.g. for production diagnostics), use the full five-argument form.
-
-### Shorter prefix with `as`
-
-If `contracts.` feels too long, you can alias the module at import time — this is standard V and requires no special support from the module:
-
-```v
-import dazhi_the_revelator.contracts as ct
-
-fn divide(a f64, b f64) f64 {
-    ct.require(b != 0.0, 'divisor must not be zero')
-    result := a / b
-    ct.ensure(result == result, 'result must not be NaN')
+    contracts.ensure(&cfg, result == result, 'result must not be NaN', @FILE, @LINE)
     return result
 }
 ```
 
-The full five-argument form works with an alias too:
+------
+
+## Shorthand
 
 ```v
-import dazhi_the_revelator.contracts as ct
+contracts.require(b != 0.0, 'divisor must not be zero')
+contracts.ensure(result == result, 'result must not be NaN')
+```
 
-const cfg = ct.Config{}
+> ⚠️ Shorthand loses call-site file/line. Use full form for accurate diagnostics.
 
-fn divide(a f64, b f64) f64 {
-    ct.require(&cfg, b != 0.0, 'divisor must not be zero', @FILE, @LINE)
-    return a / b
+------
+
+# API
+
+------
+
+## `require` — Precondition
+
+### Full form
+
+```v
+contracts.require(&cfg, b != 0.0, 'divisor must not be zero', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.require(b != 0.0, 'divisor must not be zero')
+```
+
+------
+
+## `ensure` — Postcondition
+
+### Full form
+
+```v
+contracts.ensure(&cfg, result >= 0, 'result must be non-negative', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.ensure(result >= 0, 'result must be non-negative')
+```
+
+------
+
+## `ensure_result` — Return validation
+
+### Full form
+
+```v
+return contracts.ensure_result(&cfg, value, value > 0, 'must be positive', @FILE, @LINE)
+```
+
+### Shorthand (inside body)
+
+```v
+result := compute()
+contracts.ensure(result > 0, 'must be positive')
+return result
+```
+
+------
+
+## `invariant_check` — Internal consistency
+
+### Full form
+
+```v
+contracts.invariant_check(&cfg, s.len >= 0, 'length must be valid', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.invariant_check(s.len >= 0, 'length must be valid')
+```
+
+------
+
+## `assert_that` — General assertion
+
+### Full form
+
+```v
+contracts.assert_that(&cfg, items.len > 0, 'must not be empty', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.assert_that(items.len > 0, 'must not be empty')
+```
+
+------
+
+## `assert_eq`
+
+### Full form
+
+```v
+contracts.assert_eq(&cfg, result, expected, 'result check', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.assert_eq(result, expected, 'result check')
+```
+
+------
+
+## `assert_ne`
+
+### Full form
+
+```v
+contracts.assert_ne(&cfg, idx, -1, 'index must exist', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.assert_ne(idx, -1, 'index must exist')
+```
+
+------
+
+## `assert_lt`
+
+### Full form
+
+```v
+contracts.assert_lt(&cfg, index, items.len, 'index', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.assert_lt(index, items.len, 'index')
+```
+
+------
+
+## `assert_gt`
+
+### Full form
+
+```v
+contracts.assert_gt(&cfg, items.len, 0, 'items.len', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.assert_gt(items.len, 0, 'items.len')
+```
+
+------
+
+## `assert_in_range`
+
+### Full form
+
+```v
+contracts.assert_in_range(&cfg, pct, 0, 100, 'percent', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.assert_in_range(pct, 0, 100, 'percent')
+```
+
+------
+
+## `assert_approx_eq`
+
+### Full form
+
+```v
+contracts.assert_approx_eq(&cfg, result, 3.14, 0.01, 'pi', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+contracts.assert_approx_eq(result, 3.14, 0.01, 'pi')
+```
+
+------
+
+## `require_not_none`
+
+### Full form
+
+```v
+val := contracts.require_not_none(&cfg, maybe, 'must exist', @FILE, @LINE)
+```
+
+### Shorthand
+
+```v
+val := contracts.require_not_none(maybe, 'must exist')
+```
+
+> ⚠️ If handler does not panic, returns zero value of `T`.
+
+------
+
+## `checked`
+
+### Full form
+
+```v
+return contracts.checked(&cfg, x >= 0, 'must be non-negative',
+    fn () f64 { return math.sqrt(x) }, @FILE, @LINE)
+```
+
+### Shorthand pattern
+
+```v
+contracts.require(x >= 0, 'must be non-negative')
+return math.sqrt(x)
+```
+
+------
+
+## `Invariant`
+
+### Full form
+
+```v
+mut inv := contracts.Invariant{ cfg: &cfg }
+inv.check(x > 0, 'x must be positive')
+inv.check(y > 0, 'y must be positive')
+inv.validate(@FILE, @LINE)
+```
+
+### Shorthand-style usage
+
+```v
+contracts.invariant_check(x > 0, 'x must be positive')
+contracts.invariant_check(y > 0, 'y must be positive')
+```
+
+------
+
+## `ContractedFn`
+
+### Full form
+
+```v
+mut cf := contracts.ContractedFn[int]{ cfg: &cfg }
+cf.pre(x > 0, 'x must be positive')
+return cf.call(fn () int { return x * 2 }, @FILE, @LINE)
+```
+
+### Simpler alternative
+
+```v
+contracts.require(x > 0, 'x must be positive')
+return x * 2
+```
+
+> ⚠️ `post()` cannot depend on return value (evaluated early)
+
+------
+
+## `ViolationError`
+
+```v
+return contracts.ViolationError{ info: ... }
+```
+
+Used for `!T` error flows instead of panicking.
+
+------
+
+## Production
+
+```v
+const cfg = $if prod {
+    contracts.disabled()
+} else {
+    contracts.Config{}
 }
 ```
 
----
+------
 
-## API Reference
-
----
-
-### `Config`
+## Testing
 
 ```v
-pub struct Config {
-pub:
-    enabled bool               = true
-    handler ViolationHandlerFn = panic_handler
-}
-```
+mut violations := []contracts.ViolationInfo{}
 
-Holds the runtime settings for a set of contract checks. Create one instance per file, module, or test scope and pass it (as `&cfg`) to every contract function. There is no global state — all behaviour is controlled through this struct.
-
-`enabled` — when `false`, every check that receives this Config is a no-op. Set to `false` for production or release builds.
-
-`handler` — called whenever a check fails. Defaults to `panic_handler`. Replace with any `fn (ViolationInfo)` function to log, collect, or otherwise handle violations.
-
-```v
-// Standard config — enabled, panics on violation.
-const cfg = contracts.Config{}
-
-// Custom handler — logs instead of panicking.
 const cfg = contracts.Config{
-    handler: fn (info contracts.ViolationInfo) {
-        eprintln(info.str())
-    }
-}
-
-// Wire enabled to a compile-time flag: v -d prod myapp.v
-const cfg = contracts.Config{ enabled: $if !prod { true } else { false } }
-```
-
----
-
-### `disabled`
-
-```v
-pub fn disabled() Config
-```
-
-Returns a `Config` with all checks turned off. Use this for production or release builds instead of writing `Config{ enabled: false }` at every call site.
-
-```v
-// Development build: full checking.
-const cfg = contracts.Config{}
-
-// Production build: all checks skipped.
-const cfg = contracts.disabled()
-```
-
----
-
-### `panic_handler`
-
-```v
-pub fn panic_handler(info ViolationInfo)
-```
-
-The built-in violation handler. Panics with a formatted message containing the violation kind, source file, line number, and message. This is the default value of `Config.handler` and can be assigned explicitly to restore default behaviour after substituting a custom handler.
-
----
-
-### `ViolationInfo.str`
-
-```v
-pub fn (info ViolationInfo) str() string
-```
-
-Returns the same formatted string that `panic_handler` would produce. Implementing `str()` makes `ViolationInfo` usable directly in string interpolation and `eprintln` calls inside custom handlers — no manual formatting needed. The output is identical to `ViolationError.msg()`.
-
-```v
-// Simple example — use str() in a custom logging handler.
-const cfg = contracts.Config{
-    handler: fn (info contracts.ViolationInfo) {
-        eprintln('[VIOLATION] ${info.str()}')
+    handler: fn [mut violations] (info contracts.ViolationInfo) {
+        violations << info
     }
 }
 ```
 
-```v
-// Advanced example — store formatted messages in a log alongside raw info.
-struct AuditLog {
-mut:
-    entries []string
-    raw     []contracts.ViolationInfo
-}
+------
 
-fn (mut log AuditLog) handler(info contracts.ViolationInfo) {
-    log.entries << info.str()
-    log.raw     << info
-}
+## Common Pitfalls
 
-mut audit := AuditLog{}
-const cfg = contracts.Config{
-    handler: fn [mut audit] (info contracts.ViolationInfo) {
-        audit.handler(info)
-    }
-}
-```
+- Shorthand hides real file/line
+- `assert_eq` with floats → use `assert_approx_eq`
+- `require_not_none` can silently return zero value
+- `ContractedFn.post()` evaluated too early
+- Forgetting `@FILE`, `@LINE`
 
----
+------
 
-### `ViolationError`
-
-```v
-pub struct ViolationError {
-pub:
-    info ViolationInfo
-}
-
-pub fn (e ViolationError) msg() string
-pub fn (e ViolationError) code() int
-```
-
-An error type wrapping a contract violation. Allows functions to return `!T` and participate in V's `or {}` / `!` error propagation instead of always panicking. Use when you want violations to be recoverable rather than fatal. `msg()` produces the same formatted string as `ViolationInfo.str()`.
-
-**Simple example**
-
-```v
-fn safe_divide(a f64, b f64) !f64 {
-    if b == 0.0 {
-        return contracts.ViolationError{
-            info: contracts.ViolationInfo{
-                kind:    .precondition
-                message: 'divisor must not be zero'
-                file:    @FILE
-                line:    @LINE
-            }
-        }
-    }
-    return a / b
-}
-
-result := safe_divide(10.0, 0.0) or {
-    eprintln('caught: ${err}')
-    0.0
-}
-println(result)  // 0.0
-```
-
-**Advanced example**
-
-```v
-fn validated_sqrt(x f64) !f64 {
-    if x < 0.0 {
-        return contracts.ViolationError{
-            info: contracts.ViolationInfo{
-                kind: .precondition, message: 'x must be non-negative', file: @FILE, line: @LINE
-            }
-        }
-    }
-    return math.sqrt(x)
-}
-
-fn process(values []f64) ![]f64 {
-    mut out := []f64{}
-    for v in values {
-        out << validated_sqrt(v)!
-    }
-    return out
-}
-
-results := process([4.0, 9.0, 16.0]) or { panic(err) }
-println(results)  // [2.0, 3.0, 4.0]
-```
-
----
-
-### `require`
-
-```v
-pub fn require(cfg &Config, condition bool, message string, file string, line string)
-```
-
-Checks a **precondition** — something the *caller* must ensure is true before calling a function. Violations here mean the caller passed bad arguments or called the function at the wrong time.
-
-**Simple example**
-
-```v
-const cfg = contracts.Config{}
-
-fn enter_ride(height_cm int) {
-    contracts.require(&cfg, height_cm >= 120, 'you must be at least 120 cm tall', @FILE, @LINE)
-    println('Enjoy the ride!')
-}
-
-enter_ride(135)  // Enjoy the ride!
-enter_ride(110)  // panic: Precondition (require) violated … you must be at least 120 cm tall
-```
-
-**Advanced example**
-
-```v
-fn binary_search(items []int, target int, lo int, hi int) int {
-    contracts.require(&cfg, items.len > 0,  'items must not be empty',   @FILE, @LINE)
-    contracts.require(&cfg, lo >= 0,        'lo must be >= 0',            @FILE, @LINE)
-    contracts.require(&cfg, hi < items.len, 'hi must be < items.len',     @FILE, @LINE)
-    contracts.require(&cfg, lo <= hi,       'lo must be <= hi',            @FILE, @LINE)
-    // ... search logic ...
-    return -1
-}
-```
-
----
-
-### `ensure`
-
-```v
-pub fn ensure(cfg &Config, condition bool, message string, file string, line string)
-```
-
-Checks a **postcondition** — something the *function* promises will be true when it returns. Violations here mean there is a bug in the function itself, not in its caller.
-
-**Simple example**
-
-```v
-fn my_abs(x int) int {
-    result := if x < 0 { -x } else { x }
-    contracts.ensure(&cfg, result >= 0, 'abs result must be non-negative', @FILE, @LINE)
-    return result
-}
-```
-
-**Advanced example**
-
-```v
-fn safe_sort(items []int) []int {
-    mut result := items.clone()
-    result.sort()
-    contracts.ensure(&cfg, result.len == items.len,
-        'sorted length must match input', @FILE, @LINE)
-    for i in 1 .. result.len {
-        contracts.ensure(&cfg, result[i - 1] <= result[i],
-            'output must be non-decreasing at index ${i}', @FILE, @LINE)
-    }
-    return result
-}
-```
-
----
-
-### `ensure_result`
-
-```v
-pub fn ensure_result[T](cfg &Config, value T, condition bool, message string, file string, line string) T
-```
-
-Checks a postcondition that involves the return value and passes the value through unchanged. Lets you write the check inline on the `return` statement.
-
-**Simple example**
-
-```v
-fn calculate_score(correct int, total int) int {
-    raw := (correct * 100) / total
-    return contracts.ensure_result(&cfg, raw, raw >= 0 && raw <= 100,
-        'score must be 0–100', @FILE, @LINE)
-}
-```
-
-**Advanced example**
-
-```v
-fn clamp(value f64, lo f64, hi f64) f64 {
-    contracts.require(&cfg, lo <= hi, 'lo must be <= hi', @FILE, @LINE)
-    raw := if value < lo { lo } else if value > hi { hi } else { value }
-    return contracts.ensure_result(&cfg, raw, raw >= lo && raw <= hi,
-        'clamp result must be within [lo, hi]', @FILE, @LINE)
-}
-```
-
----
-
-### `invariant_check`
-
-```v
-pub fn invariant_check(cfg &Config, condition bool, message string, file string, line string)
-```
-
-Checks that an object or data structure is in a **consistent internal state**. Call at the start and end of any method that mutates a struct to catch corruption immediately at the point it occurs.
-
-**Simple example**
-
-```v
-struct ScoreTracker { mut: score int; max int }
-
-fn (mut s ScoreTracker) add_points(n int) {
-    contracts.invariant_check(&cfg, s.score >= 0 && s.score <= s.max,
-        'score must be within [0, max] before add', @FILE, @LINE)
-    s.score += n
-    contracts.invariant_check(&cfg, s.score >= 0 && s.score <= s.max,
-        'score must be within [0, max] after add', @FILE, @LINE)
-}
-```
-
-**Advanced example**
-
-```v
-struct LinkedList { mut: head ?&Node; count int }
-
-fn (l &LinkedList) actual_count() int {
-    mut n := 0
-    mut cur := l.head
-    for cur != none { n++; cur = cur?.next }
-    return n
-}
-
-fn (mut l LinkedList) check_state() {
-    contracts.invariant_check(&cfg, l.count == l.actual_count(),
-        'count must match actual node count', @FILE, @LINE)
-    contracts.invariant_check(&cfg, l.count >= 0,
-        'count must be non-negative', @FILE, @LINE)
-}
-```
-
----
-
-### `assert_that`
-
-```v
-pub fn assert_that(cfg &Config, condition bool, message string, file string, line string)
-```
-
-A general-purpose assertion with a descriptive message. Unlike V's built-in `assert`, failures go through `cfg.handler` instead of always panicking.
-
-**Simple example**
-
-```v
-fn load_config(path string) []string {
-    lines := ['entry1', 'entry2']
-    contracts.assert_that(&cfg, lines.len > 0, 'config file must not be empty', @FILE, @LINE)
-    return lines
-}
-```
-
-**Advanced example**
-
-```v
-fn merge_maps(a map[string]int, b map[string]int) map[string]int {
-    mut result := a.clone()
-    for k, v in b { result[k] = v }
-    contracts.assert_that(&cfg, result.len >= a.len,
-        'merged map must be at least as large as the first input', @FILE, @LINE)
-    for k in b.keys() {
-        contracts.assert_that(&cfg, k in result,
-            'key "${k}" from second map must exist in result', @FILE, @LINE)
-    }
-    return result
-}
-```
-
----
-
-### `assert_eq`
-
-```v
-pub fn assert_eq[T](cfg &Config, actual T, expected T, label string, file string, line string)
-```
-
-Asserts that two values are equal with an auto-formatted `"expected X, got Y"` message. For floating-point values, use [`assert_approx_eq`](#assert_approx_eq) instead.
-
-**Simple example**
-
-```v
-contracts.assert_eq(&cfg, add(2, 3), 5, 'add(2, 3)', @FILE, @LINE)  // passes
-contracts.assert_eq(&cfg, add(2, 3), 9, 'add(2, 3)', @FILE, @LINE)
-// panic: Assertion failed … add(2, 3): expected 9, got 5
-```
-
-**Advanced example**
-
-```v
-fn test_round_trip(input string) {
-    result := decode(encode(input))
-    contracts.assert_eq(&cfg, result, input, 'round-trip of "${input}"', @FILE, @LINE)
-}
-```
-
----
-
-### `assert_ne`
-
-```v
-pub fn assert_ne[T](cfg &Config, actual T, unexpected T, label string, file string, line string)
-```
-
-Asserts that two values are **not** equal with an auto-formatted message.
-
-**Simple example**
-
-```v
-idx := names.index('Bob')
-contracts.assert_ne(&cfg, idx, -1, 'index of Bob', @FILE, @LINE)
-println(names[idx])  // Bob
-```
-
-**Advanced example**
-
-```v
-fn apply_discount(price f64, pct f64) f64 {
-    contracts.require(&cfg, pct > 0.0 && pct < 1.0,
-        'discount must be between 0 and 1', @FILE, @LINE)
-    result := price * (1.0 - pct)
-    contracts.assert_ne(&cfg, result, price, 'discounted price', @FILE, @LINE)
-    return result
-}
-```
-
----
-
-### `assert_lt`
-
-```v
-pub fn assert_lt[T](cfg &Config, actual T, limit T, label string, file string, line string)
-```
-
-Asserts that `actual` is strictly less than `limit` with an auto-formatted message.
-
-**Simple example**
-
-```v
-fn get_item(items []string, index int) string {
-    contracts.assert_lt(&cfg, index, items.len, 'index', @FILE, @LINE)
-    return items[index]
-}
-```
-
-**Advanced example**
-
-```v
-fn fetch_page(total_pages int, requested int) {
-    contracts.assert_gt(&cfg, total_pages, 0, 'total_pages', @FILE, @LINE)
-    contracts.assert_lt(&cfg, requested, total_pages, 'requested page', @FILE, @LINE)
-    contracts.assert_gt(&cfg, requested, -1, 'requested page', @FILE, @LINE)
-}
-```
-
----
-
-### `assert_gt`
-
-```v
-pub fn assert_gt[T](cfg &Config, actual T, floor T, label string, file string, line string)
-```
-
-Asserts that `actual` is strictly greater than `floor` with an auto-formatted message.
-
-**Simple example**
-
-```v
-fn first(items []int) int {
-    contracts.assert_gt(&cfg, items.len, 0, 'items.len', @FILE, @LINE)
-    return items[0]
-}
-```
-
-**Advanced example**
-
-```v
-struct Product { name string; price f64; stock int }
-
-fn validate_product(p Product) {
-    contracts.assert_that(&cfg, p.name.len > 0, 'product name must not be empty', @FILE, @LINE)
-    contracts.assert_gt(&cfg, p.price, 0.0,     'price',                           @FILE, @LINE)
-    contracts.assert_gt(&cfg, p.stock, -1,       'stock',                           @FILE, @LINE)
-}
-```
-
----
-
-### `assert_in_range`
-
-```v
-pub fn assert_in_range[T](cfg &Config, actual T, lo T, hi T, label string, file string, line string)
-```
-
-Asserts that `actual` is within the inclusive range `[lo, hi]` with an auto-formatted message.
-
-**Simple example**
-
-```v
-fn set_volume(pct int) {
-    contracts.assert_in_range(&cfg, pct, 0, 100, 'volume percent', @FILE, @LINE)
-    println('Volume set to ${pct}%')
-}
-```
-
-**Advanced example**
-
-```v
-struct SimConfig { timestep f64; gravity f64; max_particles int }
-
-fn validate_config(c SimConfig) {
-    contracts.assert_in_range(&cfg, c.timestep,      0.001, 1.0,    'timestep',      @FILE, @LINE)
-    contracts.assert_in_range(&cfg, c.gravity,       0.0,   20.0,   'gravity',       @FILE, @LINE)
-    contracts.assert_in_range(&cfg, c.max_particles, 1,     100000, 'max_particles', @FILE, @LINE)
-}
-```
-
----
-
-### `assert_approx_eq`
-
-```v
-pub fn assert_approx_eq(cfg &Config, actual f64, expected f64, tolerance f64, label string, file string, line string)
-```
-
-Asserts that two `f64` values are within `tolerance` of each other, with an auto-formatted message that includes the actual difference. Use this instead of `assert_eq` for floating-point values — exact `f64` equality is almost always wrong due to rounding.
-
-**Simple example**
-
-```v
-import math
-
-fn circle_area(r f64) f64 {
-    return math.pi * r * r
-}
-
-contracts.assert_approx_eq(&cfg, circle_area(1.0), 3.14159, 0.0001, 'area of unit circle', @FILE, @LINE)
-// passes — diff is within tolerance
-```
-
-**Advanced example**
-
-```v
-// Verify that a fast inverse square root approximation is close enough.
-fn fast_inv_sqrt(x f64) f64 {
-    // ... approximation ...
-    return 0.0
-}
-
-fn test_inv_sqrt(input f64, expected f64) {
-    result := fast_inv_sqrt(input)
-    contracts.assert_approx_eq(&cfg, result, expected, 0.001,
-        'fast_inv_sqrt(${input})', @FILE, @LINE)
-}
-
-test_inv_sqrt(4.0, 0.5)   // passes if result is within 0.001 of 0.5
-test_inv_sqrt(16.0, 0.25) // passes if result is within 0.001 of 0.25
-```
-
----
-
-### `require_not_none`
-
-```v
-pub fn require_not_none[T](cfg &Config, value ?T, message string, file string, line string) T
-```
-
-Unwraps an optional value, firing a precondition violation if it is `none`. If the handler does not panic, a zero value of `T` is returned after the violation is reported.
-
-**Simple example**
-
-```v
-fn greet(maybe_name ?string) string {
-    name := contracts.require_not_none(&cfg, maybe_name,
-        'a name must be provided', @FILE, @LINE)
-    return 'Hello, ${name}!'
-}
-```
-
-**Advanced example**
-
-```v
-struct User { name string; age int }
-
-fn get_cached_user(cache map[int]User, id int) User {
-    entry := cache[id] or { none }
-    return contracts.require_not_none(&cfg, entry,
-        'user ${id} must be present in cache before this call', @FILE, @LINE)
-}
-```
-
----
-
-### `checked`
-
-```v
-pub fn checked[T](cfg &Config, condition bool, message string, body fn () T, file string, line string) T
-```
-
-Checks a single precondition then runs `body`, returning its result. Use this instead of building a full `ContractedFn` when you only need one guard.
-
-**Simple example**
-
-```v
-import math
-
-fn safe_sqrt(x f64) f64 {
-    return contracts.checked(&cfg, x >= 0.0, 'x must be non-negative',
-        fn [x] () f64 { return math.sqrt(x) }, @FILE, @LINE)
-}
-```
-
-**Advanced example**
-
-```v
-fn parse_if_valid(token string, data string) MyResult {
-    return contracts.checked(&cfg, token.len == 32, 'token must be 32 characters',
-        fn [data] () MyResult { return expensive_parse(data) }, @FILE, @LINE)
-}
-```
-
----
-
-### `Invariant`
-
-```v
-pub struct Invariant {
-pub:
-    cfg &Config = &Config{}
-...
-}
-
-pub fn (mut i Invariant) check(condition bool, message string)
-pub fn (mut i Invariant) validate(file string, line string) bool
-pub fn (mut i Invariant) reset()
-```
-
-A helper struct for **multi-condition invariant checking**. Accumulates all failures with `check()`, then reports them all at once via `validate()`. Use `reset()` to clear failures and reuse the instance.
-
-**Simple example**
-
-```v
-struct Rect { width int; height int }
-
-fn (r &Rect) validate() {
-    mut inv := contracts.Invariant{ cfg: &cfg }
-    inv.check(r.width > 0,  'width must be positive')
-    inv.check(r.height > 0, 'height must be positive')
-    inv.validate(@FILE, @LINE)
-}
-// If both fail, both violations are reported before returning.
-```
-
-**Advanced example**
-
-```v
-// Store on the struct and reset() each cycle to avoid allocations.
-struct BoundedQueue {
-mut:
-    items    []int
-    capacity int
-    head_idx int
-    inv      contracts.Invariant
-}
-
-fn (mut q BoundedQueue) check_invariants() {
-    q.inv.cfg = &cfg
-    q.inv.reset()
-    q.inv.check(q.capacity > 0,            'capacity must be positive')
-    q.inv.check(q.items.len <= q.capacity, 'items must not exceed capacity')
-    q.inv.check(q.head_idx >= 0,           'head_idx must be >= 0')
-    q.inv.check(q.head_idx <= q.items.len, 'head_idx must not exceed items.len')
-    q.inv.validate(@FILE, @LINE)
-}
-```
-
----
-
-### `ContractedFn`
-
-```v
-@[heap]
-pub struct ContractedFn[T] {
-pub:
-    cfg &Config = &Config{}
-pub mut:
-    preconditions  []string
-    postconditions []string
-    pre_results    []bool
-    post_results   []bool
-}
-
-pub fn (mut c ContractedFn[T]) pre(condition bool, message string) &ContractedFn[T]
-pub fn (mut c ContractedFn[T]) post(condition bool, message string) &ContractedFn[T]
-pub fn (mut c ContractedFn[T]) call(body fn () T, file string, line string) T
-```
-
-A builder for attaching multiple pre- and postconditions to a closure. All preconditions are verified before `body` runs; all postconditions after. `pre()` and `post()` return `&ContractedFn[T]` for chaining.
-
-> **Note:** V evaluates arguments eagerly, so expressions passed to `post()` are captured *before* `body()` runs. Use `post()` only for conditions that do not depend on `body()`'s return value. For return-value postconditions, use `ensure_result()` inside the body.
-
-> **Tip:** If you only need one precondition, prefer the simpler [`checked`](#checked) function.
-
-**Simple example**
-
-```v
-fn safe_divide(a f64, b f64) f64 {
-    mut cf := contracts.ContractedFn[f64]{ cfg: &cfg }
-    cf.pre(b != 0.0, 'divisor must not be zero')
-    return cf.call(fn [a, b] () f64 { return a / b }, @FILE, @LINE)
-}
-```
-
-**Advanced example**
-
-```v
-fn bounded_divide(a f64, b f64, lo f64, hi f64) f64 {
-    mut cf := contracts.ContractedFn[f64]{ cfg: &cfg }
-    cf.pre(b != 0.0, 'divisor must not be zero')
-    cf.pre(lo < hi,  'lo must be less than hi')
-    return cf.call(fn [a, b, lo, hi] () f64 {
-        result := a / b
-        return contracts.ensure_result(&cfg, result, result >= lo && result <= hi,
-            'result must be within [lo, hi]', @FILE, @LINE)
-    }, @FILE, @LINE)
-}
-```
-
----
-
-## Design Notes
-
-**No global state.** V discourages global variables, and this module has none. All settings live in the `Config` struct you create and own. This makes behaviour explicit, makes tests trivially isolated (each test creates its own `Config`), and makes the module safe to use in concurrent contexts.
-
-**`@FILE` and `@LINE` at every call site.** V's compile-time identifiers are evaluated where you write them, not inside the module. Passing them explicitly means every violation message tells you the exact file and line in *your* code where the broken contract was written. The built-in shorthand eliminates the repetition at the cost of pointing to `defaults.v` instead of your call site; the full five-argument form preserves accuracy.
-
-**`require` vs `ensure` vs `assert_that`.** These are intentionally separate. `require` means the *caller* made a mistake. `ensure` means *this function* made a mistake. `assert_that` is for general logic checks that don't fit either category. Keeping them distinct makes bug attribution immediate.
-
-**`ViolationInfo.str()` and consistent formatting.** `ViolationInfo.str()`, `ViolationError.msg()`, and `panic_handler` all produce the same formatted string. This means any custom handler, error message, or log entry looks identical to a panic message — no divergence between how violations appear in different contexts.
-
-**`assert_approx_eq` for floating point.** Exact `f64` equality via `==` is almost always wrong. `assert_approx_eq` makes the tolerance explicit at the call site, which both documents the expected precision and prevents brittle tests that break on the least significant bit.
-
-**`disabled()` for production builds.** `contracts.disabled()` is more readable and searchable than `Config{ enabled: false }` scattered across files. A project-wide grep for `disabled()` immediately shows every place where contracts are suppressed.
-
-**`ViolationError` for recoverable contracts.** The default handler panics, which is right for most cases — a violated contract is a programming error that should have been caught in development. But for library code or edge-case recovery, `ViolationError` lets violations integrate cleanly with V's `!T` / `or {}` error handling.
-
-**Zero overhead when disabled.** Every check function is `@[inline]` and begins with `if !cfg.enabled { return }`. With `disabled()`, the compiler eliminates all contract code — no string allocation, no condition evaluation, no call overhead.
-
-**`Invariant.reset()` for reuse.** If invariants are checked frequently (e.g., every frame in a game loop), allocating a new `Invariant{}` each call creates unnecessary GC pressure. Store the instance on the struct and call `reset()` at the start of each validation cycle.
-
-**Generic functions infer their type.** `assert_eq`, `assert_ne`, `assert_lt`, `assert_gt`, `assert_in_range`, `ensure_result`, `require_not_none`, and `checked` are all generic over `T`. V's type inference means you never need to write the type parameter explicitly.
-
----
-
-## Running the Tests
+## Run Tests
 
 ```sh
 v test .
 ```
-
-All tests are in `contracts_test.v`. Each test creates its own collecting `Config` that appends violations to a local slice instead of panicking, so every scenario is safe to test without crashing the test runner. There are no shared globals to reset between tests.
-
----
-
-## Changelog
-
-### 1.2.2
-
-- Removed the **Reducing Boilerplate — Project-Level Aliases** section. The built-in shorthand wrappers introduced in 1.2.0 cover the same use case, making the manual wrapper-file pattern redundant.
-
-### 1.2.0
-
-- **Built-in shorthand wrappers** (`defaults.v`) — every core check is now available as a shorter overload with no `Config` or `@FILE` / `@LINE` argument. Resolved by arity: `contracts.require(cond, msg)` uses the module default Config. Full five-argument forms remain unchanged.
-
-### 1.1.0
-
-- `ViolationInfo.str()` — formats a violation the same way `panic_handler` does; makes `ViolationInfo` directly usable in string interpolation and custom handlers without manual formatting. Output is identical to `ViolationError.msg()`.
-- `disabled()` — constructor function returning `Config{ enabled: false }`; more readable and searchable than inline struct literals at every production call site.
-- `assert_approx_eq` — floating-point equality assertion with an explicit tolerance; reports the actual difference on failure. Use instead of `assert_eq` for any `f64` value.
-
-### 1.0.0
-
-- Initial release.
-- `Config` struct — explicit, global-free settings: `enabled` flag and replaceable `handler`.
-- `panic_handler` — built-in handler that panics with full location info; assignable to `Config.handler`.
-- `require`, `ensure`, `invariant_check`, `assert_that` — core contract checks.
-- `ensure_result[T]` — inline postcondition on return values.
-- `require_not_none[T]` — optional unwrap with precondition violation; returns zero value of `T` if handler does not panic.
-- `assert_eq[T]`, `assert_ne[T]` — equality/inequality assertions with auto-formatted messages.
-- `assert_lt[T]`, `assert_gt[T]`, `assert_in_range[T]` — comparison and range assertions.
-- `checked[T]` — single-precondition shorthand for wrapping a closure.
-- `ViolationError` — `IError`-compatible wrapper for recoverable contract violations.
-- `Invariant` struct with `check`, `validate`, `reset` — multi-condition fluent invariant checking.
-- `ContractedFn[T]` builder with `pre`, `post`, `call` — multi-condition pre/postcondition builder.
-- Full test suite in `contracts_test.v`.
